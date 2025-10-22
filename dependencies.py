@@ -36,9 +36,9 @@ class room:
             if temp != 0:
                 self.dt['row1'].append(std.branch)
                 self.subj['row1'].append(std.sub)
-                # self.record.append([std.branch, "row1", (std.filled+1, std.filled+temp), std.sub, temp])
-                self.record['row1'] = self.record.get('row1', []) + [ std.branch + str(x) for x in range(std.filled+1, std.filled+temp+1 )]
-                std.alloted_rooms.append({"rno":self.rno, "from":std.filled+1,"to":std.filled+temp, "row":1, "branch":std.branch}) #temp
+                # self.record.append([std.branch, "row1", (std.filled+1, std.filled+temp), std.sub, temp])  TODO: replace the numbers with roll numbers
+                self.record['row1'] = self.record.get('row1', []) + [ std.rollnum[x] for x in range(std.filled, std.filled+temp )]
+                std.alloted_rooms.append({"rno":self.rno, "from":std.rollnum[std.filled],"to":std.rollnum[std.filled+temp-1], "row":1, "branch":std.branch, "total":temp}) #temp
             std.filled += temp
             self.row1 -= temp
         elif self.row2 != 0 and self.canFill(std, 'row2'):
@@ -48,8 +48,8 @@ class room:
                 self.dt['row2'].append(std.branch)
                 self.subj['row2'].append(std.sub)
                 # self.record.append([std.branch, "row2", (std.filled+1, std.filled+temp), std.sub, temp])
-                self.record['row2'] = self.record.get('row2', []) + [ std.branch + str(x) for x in range(std.filled+1, std.filled+temp+1 )]
-                std.alloted_rooms.append({"rno":self.rno, "from":std.filled+1,"to":std.filled+temp, "row":2, "branch":std.branch}) #temp
+                self.record['row2'] = self.record.get('row2', []) + [ std.rollnum[x] for x in range(std.filled, std.filled+temp )]
+                std.alloted_rooms.append({"rno":self.rno, "from":std.rollnum[std.filled],"to":std.rollnum[std.filled+temp-1], "row":2, "branch":std.branch, "total":temp}) #temp
             std.filled += temp
             self.row2 -= temp
         return 
@@ -57,12 +57,13 @@ class room:
 
 #class form branch details
 class std:
-    def __init__(a,branch, strength, sub):
+    def __init__(a,branch, strength, sub, rollnum):
         a.branch = branch
         a.strength = strength
         a.filled = 0
         a.sub = sub
         a.alloted_rooms = []
+        a.rollnum = rollnum
         
         
     def isleft(self):

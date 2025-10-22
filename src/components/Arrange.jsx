@@ -10,12 +10,10 @@ export default function Arrange(){
     const [branches, setBranches] = useState([])
     const [seatingdata, setSeatingData] = useState([])
     const [attCharts, setAttCharts] = useState([])
-
-    //get rooms data 
-    const url = "https://seating-arranger.onrender.com"
-    // const url = "http://127.0.0.1:12435"
+    const url = import.meta.env.VITE_API_URL
+    
     useEffect(()=>{ 
-        fetch(`${process.env.API_URL}/getrooms`)
+        fetch(`${url}/getrooms`)
         .then(response=> {return response.json()})
         .then(data=> {setRooms(data.response)})
         .catch(reason=>{console.log(reason)})
@@ -73,15 +71,15 @@ export default function Arrange(){
 
     <div className="selectrooms">
 
-        {rooms.map( room => <>
-        <label key={room._id}> {room.rno} 
+        {rooms.map( room => <div key={room._id}>
+        <label> {room.rno} 
             <input type="checkbox" 
             name={room.rno} 
             id={room.rno} 
             onChange={(e) => handleCheckedRoom(e, room)}
             checked= {room.checked ? room.checked :false} />
         </label>
-        </>)}
+        </div>)}
 
     </div>
 
@@ -101,14 +99,14 @@ const SelectBranch =({handleChangeSubject,handleCheckedBranch,  branches})=>{
     return <>
     <h1 id="selectbranch">select branches </h1>
     <div className="selectbranches">
-    {branches.map( branch => <div>
-        <label key={branch._id}> 
+    {branches.map( branch => <div key={branch._id}>
+        <label> 
             <input type="checkbox" 
             name={branch.branch} 
             id={branch.branch} 
             onChange={(e) => handleCheckedBranch(e, branch)}
             checked= {branch.checked ? branch.checked :false} />
-            {branch.branch}: 
+            {branch.branch + " " + branch.year}: 
         </label>
         <input type="text" name="subject" placeholder="subject name" value={branch.subject} onChange={(e)=> {handleChangeSubject(e, branch)}} /> <br />
         </div>)}
@@ -141,7 +139,7 @@ const Chart = ({data})=>{
         <td> {item.branch}</td>
         <td> { item.from }</td>
         <td> {item.to} </td>
-        <td> {item.to - item.from +1} </td>
+        <td> {item.total} </td>
         <td> { item.rno}</td>
     </tr>) }
         </tbody>

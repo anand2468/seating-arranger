@@ -5,10 +5,14 @@ from pymongo.server_api import ServerApi
 from bson import ObjectId
 import random
 from dependencies import room, std, seatarranger
+from dotenv import load_dotenv
+import os
+load_dotenv()
 
-uri = '---- your mongodb link -----'
+uri = os.getenv('MONGO_URL')
 client = MongoClient(uri, server_api = ServerApi('1'))
 db = client['esp']
+
 
 app = Flask(__name__)
 CORS(app)
@@ -54,16 +58,6 @@ def getbranchesdelete(branchesid):
     result = db.branches.delete_one(search)
     return jsonify(response = str(result.acknowledged),count = str(result.deleted_count), ntg =str(result.raw_result))
 
-
-# @app.route('/getbranches')
-# def getbranches():
-#     branches = db.branches.find()
-#     res = []
-#     for doc in branches:
-#         doc['_id'] = str(doc['_id'])
-#     return jsonify(branches = res)
-
-
 # funcions for get, update, delete rooms
 @app.route('/getrooms')
 def getrooms():
@@ -102,12 +96,14 @@ def arrangerooms():
     try:
         resp = request.json
         rooms = [ room(rno = x['rno'], strength= int(x['strength'])) for x in resp.get('rooms', [])]
-        branches = [std(branch = x['branch'], strength=int(x['strength']) , sub= x.get('subject', random.randint(0,100))) for x in resp.get('branches',[])]
+        branches = [std(branch = x['branch'], strength=int(x['strength']) , sub= x.get('subject', random.randint(0,100)), rollnum= x.get('rollnums', [ x['branch'] + str(i) for i in range(1, int(x['strength'])+1)])) for x in resp.get('branches',[])]
         arr = seatarranger(rooms, branches)
         response = str(arr.arr1())
         chart = str(arr.getAttChart())
     except Exception as e:
+        print(e)
         response = str(e)
         chart = "dont know"
+        return jsonify(response="fail", res = response)
     return jsonify(response = "SUccess" ,res = response, attChart = chart)
-app.run(port = 12435, host='0.0.0.0')
+app.run(port = 12435, host='0.0.0.0', debug=True)

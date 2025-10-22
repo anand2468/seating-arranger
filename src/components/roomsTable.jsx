@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react"
-import { json } from "react-router-dom"
 
 export default function Roomstable(){
     const [roomList, setRoomList] = useState([])
+    const url = import.meta.env.VITE_API_URL
 
     useEffect(()=>{ 
-        fetch(`${process.env.API_URL}/getrooms`)
+        console.log("url is " + url)
+        fetch(`${url}/getrooms`)
         .then(response=> {return response.json()})
         .then(data=> {console.log(data);setRoomList(data.response)})
         .catch(reason=>{console.log(reason)})
@@ -42,8 +43,11 @@ const InsertRowForm = ({handleInsert})=>{
     const [form, setform] = useState({rno:'', rows:'', columns:'', strength:''})
     const handlesubmit = (e)=>{
         e.preventDefault();
-        if (form.rno != "" && form.rows >1 && form.columns >1 && form.strength >0)
-        handleInsert(form);
+        if (form.rno != "" && form.rows >1 && form.columns >1 && form.strength >0){
+            handleInsert(form);
+            setform({rno:'', rows:'', columns:'', strength:''})
+        }
+        
         else
         alert("check the room details")
 

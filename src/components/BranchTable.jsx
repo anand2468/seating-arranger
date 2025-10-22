@@ -4,12 +4,13 @@ export default function BranchTable(){
 const [data, setData] = useState([])
 const [editingId, setEditingId] = useState(null);
 // server url
+const url = import.meta.env.VITE_API_URL
 
 
 //loading data from the server and fill the table
 
     useEffect(()=>{ 
-        fetch(`${process.env.API_URL}/getbranches`)
+        fetch(`${url}/getbranches`)
         .then(response=> {return response.json()})
         .then(data=> {setData(data.response)})
         .catch(reason=>{console.log(reason)})
@@ -68,11 +69,43 @@ return (
 
 
 const InsertBranchForm =({handleInsert})=>{
-    const [form, setform] = useState({branch:'', strength:''})
+    const [form, setform] = useState({branch:'',year:'', strength:'', rollnums:''})
+    
+    // Function to serialize array string input to proper JSON array format
+    const serializeRollnums = (input) => {
+        if (!input.trim()) return [];
+        
+        // Remove brackets if present and split by new line
+        const cleaned = input.replace(/[\[\]]/g, '').trim();
+        if (!cleaned) return [];
+        
+        // Split by new line and clean each item
+        const items = cleaned.split('\n').map(item => item.trim()).filter(item => item);
+        
+        // Return as array of strings
+        return items;
+    };
+    
     const handlesubmit = (e)=>{
         e.preventDefault();
-        if (form.branch != "" && form.year >0 &&  form.strength >0)
-        handleInsert(form);
+        if (form.branch != "" && form.year >0 &&  form.strength >0){
+            // Serialize rollnums before sending
+            const serializedRollnums = serializeRollnums(form.rollnums);
+            
+            // Check if length of rollnums equals strength
+            if (serializedRollnums.length !== parseInt(form.strength)) {
+                alert(`Invalid! Number of roll numbers (${serializedRollnums.length}) must equal strength (${form.strength})`);
+                return;
+            }
+            
+            const formData = {
+                ...form,
+                rollnums: serializedRollnums
+            };
+            handleInsert(formData);
+            setform({branch:'',year:'', strength:'', rollnums:''})
+        }
+        
         else
         alert("invalid! check the branch details")
 
@@ -86,11 +119,22 @@ const InsertBranchForm =({handleInsert})=>{
     const handlestrength = (e)=>{
         setform(prev=> ({...prev, strength: e.target.value}))
     }
+    const handlerollnums = (e)=>{
+        setform(prev=> ({...prev, rollnums: e.target.value}))
+    }
 
     return <form action="" id="formInsertRooms" onSubmit={ handlesubmit}>
         <input type="text" name="branch" id="" placeholder="branch name" value={form.branch} onChange={handlebranch}/>
         <input type="number" name="year" id="year" placeholder="year" value={form.year} onChange={handlerow}/>
         <input type="number" name="strength" id="strength" placeholder="strength" value={form.strength} onChange={handlestrength} />
+        <textarea 
+            name="rollnums" 
+            id="rollnums" 
+            placeholder="Enter roll numbers (one per line):&#10;a&#10;b&#10;c&#10;..." 
+            value={form.rollnums} 
+            onChange={handlerollnums}
+            rows="5"
+        />
         <input type="submit" value="add branch" />
     </form>
 

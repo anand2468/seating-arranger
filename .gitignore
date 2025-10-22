@@ -128,4 +128,5 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
->>>>>>> 53e2a6c (Initial commit)
+.DS_Store
+.ipynb_checkpoints
