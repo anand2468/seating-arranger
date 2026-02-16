@@ -95,7 +95,7 @@ def getroomsdelete(roomid):
 def arrangerooms():
     try:
         resp = request.json
-        rooms = [ room(rno = x['rno'], strength= int(x['strength'])) for x in resp.get('rooms', [])]
+        rooms = [ room(rno = x['rno'], strength= int(x['strength']), rows= int(x['rows'])) for x in resp.get('rooms', [])]
         branches = [std(branch = x['branch'], strength=int(x['strength']) , sub= x.get('subject', random.randint(0,100)), rollnum= x.get('rollnums', [ x['branch'] + str(i) for i in range(1, int(x['strength'])+1)])) for x in resp.get('branches',[])]
         arr = seatarranger(rooms, branches)
         response = str(arr.arr1())

@@ -1,11 +1,12 @@
 class room:
-    def __init__(self, rno, strength):
+    def __init__(self, rno, strength, rows=6):
         self.rno = rno
         self.strength = strength
         self.row1 = strength //2
         self.row2 = strength//2
+        self.no_of_rows = rows
         self.dt = {'row1':[], 'row2':[]}
-        self.record = {"room":rno , "row1":[], "row2":[]}
+        self.record = {"room":rno ,"nor":self.no_of_rows , "row1":[], "row2":[]}
         self.subj = {'row1':[], 'row2':[]}
         self.rmss = 0
 
@@ -26,7 +27,7 @@ class room:
         self.row1 = self.strength //2
         self.row2 = self.strength//2
         self.dt = {'row1':[], 'row2':[]}
-        self.record = {"room":self.rno , "row1":[], "row2":[]}
+        self.record = {"room":self.rno , "nor":self.no_of_rows, "row1":[], "row2":[]}
         self.subj = {'row1':[], 'row2':[]}
         
     def fill(self, std):

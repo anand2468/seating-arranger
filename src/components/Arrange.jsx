@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { json } from "react-router-dom";
+import './Arrange.css'
 
 function allValuesNotNull(array, property) {
     return array.every(item => item[property] !== null);
@@ -123,7 +123,7 @@ const SeatingChart = ({rows})=>{
 //rno': 'vff 5', 'from': 1, 'to': 15, 'row': 1, 'branch': 'AIML'}
 const Chart = ({data})=>{
     return <>
-        <table>
+        <table className="page">
         <thead>
         <tr key={0}>
         <th>branch</th>
@@ -135,7 +135,7 @@ const Chart = ({data})=>{
         </thead>
         
         <tbody>
-        { data.map(item =>  <tr > 
+        { data.map(item =>  <tr key={item.from}> 
         <td> {item.branch}</td>
         <td> { item.from }</td>
         <td> {item.to} </td>
@@ -149,24 +149,14 @@ const Chart = ({data})=>{
 }
 
 const AttSheets = ({data})=>{
-    return ((data ===0)?<p> no data</p> : <>{data.map(chart => <AttSheet data ={chart} /> )}</>)
+    return ((data ===0)?<p> no data</p> : <>{data.map(chart => <AttSheet key={chart.room} data ={chart} /> )}</>)
 }
 const AttSheet = ({data})=>{
-    // let maxLen = (data.row1.length >data.row2.length)? data.row1.length:data.row2.length
     let maxLen= Math.max(data.row1.length, data.row2.length)
-    // console.log(maxLen + Array.from({length:maxLen}))
-    // return <>{
-    //     Array.from( {length:maxLen}).map((_, index)=>{
-    //         <div style="display:flex; height:300px; flex-flow:column wrap;">
-    //             <section style="widht:50px; padding:20px; border:1px solid"> {data.row1[index]} </section>
-    //             <section style="widht:50px; padding:20px; border:1px solid"> {data.row2[index]} </section>
-    //         </div>
-    //     })
-    // }</>
     return (
-        <>
+        <div className="page">
         <h1> { data.room}</h1>
-        <div className="chart" style={ { display: "grid", gridTemplateRows:`repeat(${6}, ${50}px)`, gridAutoFlow:'column'}}>
+        <div className="chart" style={ { display: "grid", gridTemplateRows:`repeat(${data.nor}, ${80}px)`, gridAutoFlow:'column'}}>
         
           {Array.from({ length: maxLen }).map((_, index) => (
             <div key={index}>
@@ -174,6 +164,6 @@ const AttSheet = ({data})=>{
             </div>
           ))}
         </div>
-        </>
+        </div>
       );
 }
