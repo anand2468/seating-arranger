@@ -1,4 +1,0 @@
-flask
-pymongo
-pandas
-flask_cors

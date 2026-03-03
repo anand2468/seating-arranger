@@ -1,102 +1,135 @@
 import { useEffect, useState } from "react"
-import { collection, getDocs, addDoc, deleteDoc, doc } from "firebase/firestore"
+import { collection, getDocs, addDoc, deleteDoc, doc, query, where } from "firebase/firestore"
 import { db } from "../firebase/firebase"
+import { useAuth } from "../context/AuthContext"
 
 export default function Roomstable(){
     const [roomList, setRoomList] = useState([])
+    const { user } = useAuth()
 
-    useEffect(()=>{ 
+    useEffect(()=>{
         const fetchRooms = async ()=>{
-            const qurerySnap = await getDocs(collection(db, 'rooms'));
-            const list = qurerySnap.docs.map( doc => ({
-                id:doc.id,
-                ...doc.data()
+            if (!user) {
+                setRoomList([])
+                return
+            }
+            const q = query(collection(db, 'rooms'), where("ownerUid", "==", user.uid))
+            const querySnap = await getDocs(q)
+            const list = querySnap.docs.map((item) => ({
+                id: item.id,
+                ...item.data()
             }))
-            setRoomList(list);
+            setRoomList(list)
         }
-        fetchRooms();
-    },[])
+        fetchRooms()
+    },[user])
 
     async function handleInsert(room){
-        const res = await addDoc(collection(db, "rooms"), room)
-        if (res.id){
-            alert('data added successfully');
-            setRoomList(old => [...old, room])
-        }else{
-            alert("data added failed check you connection!");
+        if (!user) return
+
+        const roomData = {
+            ...room,
+            ownerUid: user.uid
         }
 
+        const res = await addDoc(collection(db, "rooms"), roomData)
+        if (res.id){
+            setRoomList(old => [...old, { id: res.id, ...roomData }])
+        } else {
+            alert("Unable to add room. Please check your connection.")
+        }
     }
+
     async function handleDeleteRow(id){
-        let conf = confirm("delete the row")
+        const conf = confirm("Delete this room?")
         if (conf){
             await deleteDoc(doc(db, 'rooms', id))
             setRoomList(item => item.filter(room => id !== room.id))
         }
     }
 
-    return <>
-    <InsertRowForm handleInsert={handleInsert} />
-    <Table roomList={roomList} handleDeleteRow={handleDeleteRow} />
-    </>
+    return <section className="data-panel">
+        <InsertRowForm handleInsert={handleInsert} />
+        <Table roomList={roomList} handleDeleteRow={handleDeleteRow} />
+    </section>
 }
 
 const InsertRowForm = ({handleInsert})=>{
-    const [form, setform] = useState({rno:'', rows:'', columns:'', strength:''})
-    const handlesubmit = (e)=>{
-        e.preventDefault();
-        if (form.rno != "" && form.rows >1 && form.columns >1 && form.strength >0){
-            handleInsert(form);
-            setform({rno:'', rows:'', columns:'', strength:''})
+    const [form, setForm] = useState({rno:'', rows:'', columns:'', strength:''})
+
+    const handleSubmit = (e)=>{
+        e.preventDefault()
+        if (form.rno.trim() !== "" && Number(form.rows) > 1 && Number(form.columns) > 1 && Number(form.strength) > 0){
+            handleInsert(form)
+            setForm({rno:'', rows:'', columns:'', strength:''})
+            return
         }
-        
-        else
-        alert("check the room details")
 
-    }
-    const handlerno = (e)=>{
-        setform(prev=> ({...prev, rno: e.target.value}))
-    }
-    const handlerow = (e)=>{
-        setform(prev=> ({...prev, rows: e.target.value}))
-    }
-    const handlecolumn = (e)=>{
-        setform(prev=> ({...prev, columns: e.target.value}))
-    }
-    const handlestrength = (e)=>{
-        setform(prev=> ({...prev, strength: e.target.value}))
+        alert("Please enter valid room details.")
     }
 
-    return <form action="" id="formInsertRooms" onSubmit={ handlesubmit}>
-        <input type="text" name="rno" id="" placeholder="room number" value={form.rno} onChange={handlerno}/>
-        <input type="number" name="rows" id="rows" placeholder="rows" value={form.rows} onChange={handlerow}/>
-        <input type="number" name="columns" id="columns" placeholder="columns" value={form.columns} onChange={handlecolumn}/>
-        <input type="number" name="strength" id="strength" placeholder="strength" value={form.strength} onChange={handlestrength} />
-        <input type="submit" value="add room" />
+    return <form className="data-form" onSubmit={handleSubmit}>
+        <input
+            type="text"
+            name="rno"
+            placeholder="Room number"
+            value={form.rno}
+            onChange={(e)=> setForm(prev=> ({...prev, rno: e.target.value}))}
+        />
+        <input
+            type="number"
+            name="rows"
+            placeholder="Rows"
+            value={form.rows}
+            onChange={(e)=> setForm(prev=> ({...prev, rows: e.target.value}))}
+        />
+        <input
+            type="number"
+            name="columns"
+            placeholder="Columns"
+            value={form.columns}
+            onChange={(e)=> setForm(prev=> ({...prev, columns: e.target.value}))}
+        />
+        <input
+            type="number"
+            name="strength"
+            placeholder="Strength"
+            value={form.strength}
+            onChange={(e)=> setForm(prev=> ({...prev, strength: e.target.value}))}
+        />
+        <button type="submit" className="btn-primary">Add room</button>
     </form>
 }
 
-
 const Table = ({roomList, handleDeleteRow })=>{
-    return <table>
-    <thead>
-    <tr key={0}>
-    <th>rno</th>
-    <th> rows </th>
-    <th> columns </th>
-    <th>strength </th>
-    <th> delete row</th>
-    </tr>
-    </thead>
-    
-    <tbody>
-    { roomList.map(item =>  <tr key={item.id}> 
-    <td> {item.rno}</td>
-    <td> { item.rows }</td>
-    <td> {item.columns} </td>
-    <td> {item.strength} </td>
-    <td> <button onClick={()=> handleDeleteRow(item.id)}> delete row</button></td>
-</tr>) }
-    </tbody>
-</table>
+    if (roomList.length === 0) {
+        return <div className="empty-state">
+            <h3>No rooms yet</h3>
+            <p>Add your first room to begin arranging seats.</p>
+        </div>
+    }
+
+    return <table className="data-table">
+        <thead>
+            <tr>
+                <th>Room</th>
+                <th>Rows</th>
+                <th>Columns</th>
+                <th>Strength</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            { roomList.map(item =>  <tr key={item.id}>
+                <td>{item.rno}</td>
+                <td>{item.rows}</td>
+                <td>{item.columns}</td>
+                <td>{item.strength}</td>
+                <td>
+                    <button className="btn-danger" onClick={()=> handleDeleteRow(item.id)}>Delete</button>
+                </td>
+            </tr>) }
+        </tbody>
+    </table>
 }

@@ -1,275 +1,417 @@
-import { useState, useEffect } from "react"
-import { collection, deleteDoc, getDocs, addDoc, doc } from "firebase/firestore"
+import { useEffect, useMemo, useState } from "react"
+import { collection, deleteDoc, getDocs, addDoc, doc, query, where, updateDoc } from "firebase/firestore"
 import { db } from "../firebase/firebase"
+import { useAuth } from "../context/AuthContext"
 
-export default function BranchTable(){
-const [data, setData] = useState([])
-const [editingId, setEditingId] = useState(null);
+const normalizeRoll = (value) => value.trim().toUpperCase()
 
-//loading data from the server and fill the table
-    useEffect(()=>{
-        const fetchRooms = async ()=>{
-            const qurerySnap = await getDocs(collection(db, 'branches'));
-            const list = qurerySnap.docs.map( doc => ({
-                id:doc.id,
-                ...doc.data()
-            }))
-            setData(list);
-        }
-        fetchRooms();
-    },[])
+const sortRolls = (rolls) =>
+  [...rolls].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
 
-// function to handle insert branch 
-async function handleInsert(branch){
-    const doc = await addDoc(collection(db, "branches"), branch)
-    if (doc.id){
-        setData(oldData => [...oldData, branch])
-    }
+const linesToRolls = (input) => {
+  if (!input.trim()) return []
+  const cleaned = input.replaceAll("[", "").replaceAll("]", "")
+  const rolls = cleaned
+    .split("\n")
+    .map((item) => normalizeRoll(item))
+    .filter(Boolean)
 
+  return sortRolls([...new Set(rolls)])
 }
 
-// Function to handle row deletion
-const handleDelete = async (id) => {
-    let conf = confirm("confirm to delete the branch!!")
-    if (conf){
-        const res = await deleteDoc(doc(db, 'branches', id))
-        console.log(res)
-        setData(item => item.filter(room => id !== room.id))
+export default function BranchTable() {
+  const [data, setData] = useState([])
+  const [managingId, setManagingId] = useState(null)
+  const { user } = useAuth()
+
+  useEffect(() => {
+    const fetchBranches = async () => {
+      if (!user) {
+        setData([])
+        return
+      }
+      const q = query(collection(db, "branches"), where("ownerUid", "==", user.uid))
+      const querySnap = await getDocs(q)
+      const list = querySnap.docs.map((item) => ({
+        id: item.id,
+        ...item.data(),
+      }))
+      setData(list)
     }
-};
+    fetchBranches()
+  }, [user])
 
-// Function to handle row edit
-const handleEdit = (id, updatedRow) => {
-setData(prevData =>
-    prevData.map(item => (item.id === id ? { ...item, ...updatedRow } : item))
-);
-setEditingId(null); // Exit edit mode after saving
-};
+  const managingBranch = useMemo(
+    () => data.find((item) => item.id === managingId) || null,
+    [data, managingId]
+  )
 
-// Function to start editing mode
-const startEditing = (id) => {
-setEditingId(id);
-};
+  async function handleInsert(branch) {
+    if (!user) return
 
-return (
-<div>
-    <InsertBranchForm handleInsert={handleInsert} />
+    const branchData = {
+      ...branch,
+      ownerUid: user.uid,
+    }
 
-    <Table
-    data={data}
-    onDelete={handleDelete}
-    onEdit={handleEdit}
-    editingId={editingId}
-    startEditing={startEditing}
-    />
-</div>
-);
+    const docRef = await addDoc(collection(db, "branches"), branchData)
+    if (docRef.id) {
+      setData((oldData) => [...oldData, { id: docRef.id, ...branchData }])
+    }
+  }
+
+  const handleDelete = async (id) => {
+    const conf = confirm("Delete this branch?")
+    if (conf) {
+      await deleteDoc(doc(db, "branches", id))
+      setData((items) => items.filter((branch) => id !== branch.id))
+      if (managingId === id) {
+        setManagingId(null)
+      }
+    }
+  }
+
+  const handleSaveBranch = async (id, payload) => {
+    await updateDoc(doc(db, "branches", id), payload)
+    setData((items) => items.map((item) => (item.id === id ? { ...item, ...payload } : item)))
+  }
+
+  return (
+    <section className="data-panel">
+      <InsertBranchForm handleInsert={handleInsert} />
+      <Table
+        data={data}
+        onDelete={handleDelete}
+        onManage={(id) => setManagingId(id)}
+        managingId={managingId}
+      />
+
+      {managingBranch && (
+        <BranchManager
+          branch={managingBranch}
+          onClose={() => setManagingId(null)}
+          onSave={handleSaveBranch}
+        />
+      )}
+    </section>
+  )
 }
 
+const InsertBranchForm = ({ handleInsert }) => {
+  const [form, setForm] = useState({ branch: "", year: "", rollnums: "" })
 
-const InsertBranchForm =({handleInsert})=>{
-    const [form, setform] = useState({branch:'',year:'', strength:'', rollnums:''})
-    
-    // Function to serialize array string input to proper JSON array format
-    const serializeRollnums = (input) => {
-        if (!input.trim()) return [];
-        
-        // Remove brackets if present and split by new line
-        const cleaned = input.replace(/[\[\]]/g, '').trim();
-        if (!cleaned) return [];
-        
-        // Split by new line and clean each item
-        const items = cleaned.split('\n').map(item => item.trim()).filter(item => item);
-        
-        // Return as array of strings
-        return items;
-    };
-    
-    const handlesubmit = (e)=>{
-        e.preventDefault();
-        if (form.branch != "" && form.year >0 &&  form.strength >0){
-            // Serialize rollnums before sending
-            const serializedRollnums = serializeRollnums(form.rollnums);
-            
-            // Check if length of rollnums equals strength
-            if (serializedRollnums.length !== parseInt(form.strength)) {
-                alert(`Invalid! Number of roll numbers (${serializedRollnums.length}) must equal strength (${form.strength})`);
-                return;
-            }
-            
-            const formData = {
-                ...form,
-                rollnums: serializedRollnums
-            };
-            handleInsert(formData);
-            setform({branch:'',year:'', strength:'', rollnums:''})
-        }
-        
-        else
-        alert("invalid! check the branch details")
+  const handleSubmit = (e) => {
+    e.preventDefault()
 
-    }
-    const handlebranch = (e)=>{
-        setform(prev=> ({...prev, branch: e.target.value}))
-    }
-    const handlerow = (e)=>{
-        setform(prev=> ({...prev, year: e.target.value}))
-    }
-    const handlestrength = (e)=>{
-        setform(prev=> ({...prev, strength: e.target.value}))
-    }
-    const handlerollnums = (e)=>{
-        setform(prev=> ({...prev, rollnums: e.target.value}))
+    if (form.branch.trim() === "" || Number(form.year) <= 0) {
+      alert("Please enter valid branch details.")
+      return
     }
 
-    return <form action="" id="formInsertRooms" onSubmit={ handlesubmit}>
-        <input type="text" name="branch" id="" placeholder="branch name" value={form.branch} onChange={handlebranch}/>
-        <input type="number" name="year" id="year" placeholder="year" value={form.year} onChange={handlerow}/>
-        <input type="number" name="strength" id="strength" placeholder="strength" value={form.strength} onChange={handlestrength} />
-        <textarea 
-            name="rollnums" 
-            id="rollnums" 
-            placeholder="Enter roll numbers (one per line):&#10;a&#10;b&#10;c&#10;..." 
-            value={form.rollnums} 
-            onChange={handlerollnums}
-            rows="5"
-        />
-        <input type="submit" value="add branch" />
-    </form>
-
-}
-const Table = ({ data, onDelete, onEdit, editingId, startEditing }) => {
-    return ( <table>
-        <thead>
-            <tr>
-            <th>Branch</th>
-            <th>Year</th>
-            <th>Strength</th>
-            <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {data.map(item => (
-            <TableRow
-                key={item.id}
-                item={item}
-                isEditing={item.id === editingId}
-                onDelete={onDelete}
-                onEdit={onEdit}
-                startEditing={startEditing}
-            />
-            ))}
-        </tbody>
-        </table>
-    );
-    };
-
-
-const TableRow = ({ item, isEditing, onDelete, onEdit, startEditing }) => {
-const [branch, setBranch] = useState(item.branch);
-const [year, setYear] = useState(item.year);
-const [strength, setStrength] = useState(item.strength);
-
-const handleEditClick = () => {
-    if (isEditing) {
-    onEdit(item.id, { branch, year, strength }); // Save the edited data
-    } else {
-    startEditing(item.id); // Enter edit mode
+    const activeRolls = linesToRolls(form.rollnums)
+    if (activeRolls.length === 0) {
+      alert("Please add at least one student roll number.")
+      return
     }
-};
 
-return (
-    <tr>
-    <td>
-        {isEditing ? (
+    handleInsert({
+      branch: form.branch.trim().toUpperCase(),
+      year: Number(form.year),
+      rollnums: activeRolls,
+      detainedRollnums: [],
+      strength: activeRolls.length,
+    })
+
+    setForm({ branch: "", year: "", rollnums: "" })
+  }
+
+  return (
+    <>
+      <p className="branch-form-note">
+        Add a branch once. After that, use <strong>Manage students</strong> to handle new, detained, and restored students.
+      </p>
+      <form className="data-form data-form-branch branch-create-form" onSubmit={handleSubmit}>
         <input
-            type="text"
-            value={branch}
-            onChange={(e) => setBranch(e.target.value)}
+          type="text"
+          name="branch"
+          placeholder="Branch name (e.g., CSE-A)"
+          value={form.branch}
+          onChange={(e) => setForm((prev) => ({ ...prev, branch: e.target.value }))}
         />
-        ) : (
-        branch
-        )}
-    </td>
-    <td>
-        {isEditing ? (
         <input
-            type="number"
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
+          type="number"
+          name="year"
+          placeholder="Year"
+          value={form.year}
+          onChange={(e) => setForm((prev) => ({ ...prev, year: e.target.value }))}
         />
-        ) : (
-        year
-        )}
-    </td> 
-    <td>
-        {isEditing ? (
-        <input
-            type="number"
-            value={strength}
-            onChange={(e) => setStrength(Number(e.target.value))}
+        <textarea
+          name="rollnums"
+          placeholder="Active student roll numbers (one per line)"
+          value={form.rollnums}
+          onChange={(e) => setForm((prev) => ({ ...prev, rollnums: e.target.value }))}
+          rows="5"
         />
-        ) : (
-        strength
-        )}
-    </td>
-    <td>
-        <button onClick={() => onDelete(item.id)}>Delete</button>
-        {/* <button onClick={handleEditClick}>
-        {isEditing ? 'Save' : 'Edit'}
-        </button> */}
-    </td>
-    </tr>
-);
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
-//my code
-
-function dymmytable(){
-    const [branchList, setBranchList] = useState([
-        {id:1,branch:'aiml', year:3, strength:52 },
-        {id:2,branch:'cse', year:3, strength:52 },
-        {id:3,branch:'ece', year:3, strength:52 },
-        {id:4,branch:'eee', year:3, strength:52 },
-        {id:5,branch:'cai', year:3, strength:52 },
-        {id:6,branch:'csm', year:3, strength:52 },
-        {id:7,branch:'it', year:3, strength:52 },
-        {id:8,branch:'ce', year:3, strength:52 },
-
-    ])
-    return <>
-    <Table branchList={branchList}/>
+        <button type="submit" className="btn-primary">Add branch</button>
+      </form>
     </>
+  )
 }
 
+const Table = ({ data, onDelete, onManage, managingId }) => {
+  if (data.length === 0) {
+    return (
+      <div className="empty-state">
+        <h3>No branches yet</h3>
+        <p>Add branch details with roll numbers to start seating arrangement.</p>
+      </div>
+    )
+  }
 
-const Tableme = ({branchList})=>{
-    return <table>
-        <thead>
-            <tr>
-            <th>branch</th>
-            <th> year </th>
-            <th>strength </th>
+  return (
+    <table className="data-table">
+      <thead>
+        <tr>
+          <th>Branch</th>
+          <th>Year</th>
+          <th>Active</th>
+          <th>Detained</th>
+          <th>Total Tracked</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {data.map((item) => {
+          const activeCount = item.rollnums?.length || 0
+          const detainedCount = item.detainedRollnums?.length || 0
+          return (
+            <tr key={item.id}>
+              <td>{item.branch}</td>
+              <td>{item.year}</td>
+              <td>{activeCount}</td>
+              <td>{detainedCount}</td>
+              <td>{activeCount + detainedCount}</td>
+              <td>
+                <div className="branch-table-actions">
+                  <button
+                    className={managingId === item.id ? "btn-secondary" : "btn-primary"}
+                    onClick={() => onManage(item.id)}
+                  >
+                    Manage students
+                  </button>
+                  <button className="btn-danger" onClick={() => onDelete(item.id)}>Delete</button>
+                </div>
+              </td>
             </tr>
-        </thead>
-        <tbody>
-            { branchList.map(item => <tr key={item._id}> 
-            <td> {item.branch}</td>
-            <td> { item.year }</td>
-            <td> {item.strength} </td>
-            </tr>)}
-        </tbody>
+          )
+        })}
+      </tbody>
     </table>
+  )
+}
+
+const BranchManager = ({ branch, onSave, onClose }) => {
+  const [branchName, setBranchName] = useState(branch.branch)
+  const [year, setYear] = useState(branch.year)
+  const [activeRolls, setActiveRolls] = useState(sortRolls(branch.rollnums || []))
+  const [detainedRolls, setDetainedRolls] = useState(sortRolls(branch.detainedRollnums || []))
+  const [bulkActiveInput, setBulkActiveInput] = useState((branch.rollnums || []).join("\n"))
+  const [newRoll, setNewRoll] = useState("")
+  const [error, setError] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setBranchName(branch.branch)
+    setYear(branch.year)
+    setActiveRolls(sortRolls(branch.rollnums || []))
+    setDetainedRolls(sortRolls(branch.detainedRollnums || []))
+    setBulkActiveInput((branch.rollnums || []).join("\n"))
+    setNewRoll("")
+    setError("")
+  }, [branch])
+
+  const updateActiveRolls = (nextRolls) => {
+    const sorted = sortRolls([...new Set(nextRolls)])
+    setActiveRolls(sorted)
+    setBulkActiveInput(sorted.join("\n"))
+  }
+
+  const addNewStudent = () => {
+    const roll = normalizeRoll(newRoll)
+    if (!roll) return
+
+    if (activeRolls.includes(roll) || detainedRolls.includes(roll)) {
+      setError("This roll number is already tracked in this branch.")
+      return
+    }
+
+    setError("")
+    updateActiveRolls([...activeRolls, roll])
+    setNewRoll("")
+  }
+
+  const detainStudent = (roll) => {
+    updateActiveRolls(activeRolls.filter((item) => item !== roll))
+    setDetainedRolls(sortRolls([...new Set([...detainedRolls, roll])]))
+  }
+
+  const restoreStudent = (roll) => {
+    setDetainedRolls(detainedRolls.filter((item) => item !== roll))
+    updateActiveRolls([...activeRolls, roll])
+  }
+
+  const removeActiveStudent = (roll) => {
+    updateActiveRolls(activeRolls.filter((item) => item !== roll))
+  }
+
+  const removeDetainedStudent = (roll) => {
+    setDetainedRolls(detainedRolls.filter((item) => item !== roll))
+  }
+
+  const applyBulkActive = () => {
+    const nextActive = linesToRolls(bulkActiveInput)
+    const nextDetained = detainedRolls.filter((roll) => !nextActive.includes(roll))
+    setError("")
+    setActiveRolls(nextActive)
+    setDetainedRolls(sortRolls(nextDetained))
+    setBulkActiveInput(nextActive.join("\n"))
+  }
+
+  const handleSave = async () => {
+    setError("")
+
+    if (branchName.trim() === "" || Number(year) <= 0) {
+      setError("Branch name and year are required.")
+      return
+    }
+
+    const cleanedActive = sortRolls(activeRolls)
+    if (cleanedActive.length === 0) {
+      setError("At least one active student is required for seating generation.")
+      return
+    }
+
+    const cleanedDetained = sortRolls(detainedRolls.filter((roll) => !cleanedActive.includes(roll)))
+
+    const payload = {
+      branch: branchName.trim().toUpperCase(),
+      year: Number(year),
+      rollnums: cleanedActive,
+      detainedRollnums: cleanedDetained,
+      strength: cleanedActive.length,
+    }
+
+    setSaving(true)
+    try {
+      await onSave(branch.id, payload)
+    } catch (saveError) {
+      setError(saveError.message || "Unable to save changes.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="branch-manager">
+      <div className="branch-manager-header">
+        <div>
+          <p className="page-overline">Student Manager</p>
+          <h3>{branch.branch} - Year {branch.year}</h3>
+        </div>
+        <button className="btn-secondary" onClick={onClose}>Close</button>
+      </div>
+
+      <div className="branch-manager-top">
+        <input
+          type="text"
+          value={branchName}
+          placeholder="Branch name"
+          onChange={(e) => setBranchName(e.target.value)}
+        />
+        <input
+          type="number"
+          value={year}
+          placeholder="Year"
+          onChange={(e) => setYear(e.target.value)}
+        />
+      </div>
+
+      <div className="branch-manager-top">
+        <input
+          type="text"
+          value={newRoll}
+          placeholder="Add new student roll number"
+          onChange={(e) => setNewRoll(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault()
+              addNewStudent()
+            }
+          }}
+        />
+        <button className="btn-primary" onClick={addNewStudent}>Add student</button>
+      </div>
+
+      <div className="branch-manager-grid">
+        <article className="branch-column">
+          <div className="branch-column-head">
+            <h4>Active students ({activeRolls.length})</h4>
+          </div>
+          <div className="student-list">
+            {activeRolls.length === 0 && <p className="arrange-muted">No active students.</p>}
+            {activeRolls.map((roll) => (
+              <div key={roll} className="student-item">
+                <span>{roll}</span>
+                <div>
+                  <button className="btn-secondary" onClick={() => detainStudent(roll)}>Detain</button>
+                  <button className="btn-danger" onClick={() => removeActiveStudent(roll)}>Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="branch-column">
+          <div className="branch-column-head">
+            <h4>Detained students ({detainedRolls.length})</h4>
+          </div>
+          <div className="student-list">
+            {detainedRolls.length === 0 && <p className="arrange-muted">No detained students.</p>}
+            {detainedRolls.map((roll) => (
+              <div key={roll} className="student-item">
+                <span>{roll}</span>
+                <div>
+                  <button className="btn-secondary" onClick={() => restoreStudent(roll)}>Restore</button>
+                  <button className="btn-danger" onClick={() => removeDetainedStudent(roll)}>Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+      </div>
+
+      <div className="branch-bulk-editor">
+        <h4>Bulk update active students</h4>
+        <p className="arrange-muted">Paste roll numbers (one per line) and apply to replace active list.</p>
+        <textarea
+          rows="7"
+          value={bulkActiveInput}
+          onChange={(e) => setBulkActiveInput(e.target.value)}
+          placeholder="22FE1A6101\n22FE1A6102"
+        />
+        <button className="btn-secondary" onClick={applyBulkActive}>Apply active list</button>
+      </div>
+
+      {error && <p className="arrange-error">{error}</p>}
+
+      <div className="arrange-actions">
+        <p className="arrange-muted">
+          Active students are used in seating generation. Detained students are tracked but excluded.
+        </p>
+        <button className="btn-primary" onClick={handleSave} disabled={saving}>
+          {saving ? "Saving..." : "Save branch changes"}
+        </button>
+      </div>
+    </section>
+  )
 }

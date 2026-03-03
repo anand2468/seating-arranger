@@ -1,219 +1,462 @@
 import Papa from "papaparse";
-import { useState, useEffect } from "react"
-import './print.css'
+import { useEffect, useMemo, useState } from "react";
+import "./print.css";
+import "./arrange_with_file/csvUpload.css";
 import { Room, SeatArranger, Std } from "../utils/dependencies";
-import { getDocs, collection } from "firebase/firestore";
+import { getDocs, collection, query, where } from "firebase/firestore";
 import { db } from "../firebase/firebase";
-import { generateSeating } from "../utils/generateSeating";
-
+import { useAuth } from "../context/AuthContext";
 
 function transformFast(rows) {
+  const branchMap = {};
 
-    const branchMap = {};
+  for (const row of rows) {
+    for (const branch in row) {
+      const roll = row[branch]?.trim();
+      if (!roll) continue;
 
-    // ONE main loop
-    for (const row of rows) {
+      if (!branchMap[branch]) {
+        branchMap[branch] = {
+          branch,
+          strength: 0,
+          rollnums: [],
+        };
+      }
 
-        for (const branch in row) {
-
-            const roll = row[branch]?.trim();
-            if (!roll) continue;
-
-            // create branch only when needed (lazy creation)
-            if (!branchMap[branch]) {
-                branchMap[branch] = {
-                    branch,
-                    strength: 0,
-                    rollnums: []
-                };
-            }
-
-            branchMap[branch].rollnums.push(roll);
-            branchMap[branch].strength++;
-        }
+      branchMap[branch].rollnums.push(roll);
+      branchMap[branch].strength += 1;
     }
+  }
 
-    // convert to array + add serial numbers
-    return Object.values(branchMap).map((item, index) => ({
-        subject: index + 1,
-        id:index+1,
-        ...item
-    }));
+  return Object.values(branchMap).map((item, index) => ({
+    subject: index + 1,
+    id: index + 1,
+    ...item,
+  }));
 }
 
-export function CSVUpload(){
-    const [step, setStep] = useState(1)
-    const [rooms, setRooms] = useState([])
-    const [branches, setBranches] = useState([])
-    const [seatingdata, setSeatingData] = useState([])
-    const [attCharts, setAttCharts] = useState([])
-    
-    useEffect(()=>{ 
-        const fetchRooms = async ()=>{
-            const qurerySnap = await getDocs(collection(db, 'rooms'));
-            const list = qurerySnap.docs.map( doc => ({
-                id:doc.id,
-                ...doc.data()
-            }))
-            setRooms(list);
-        }
-        fetchRooms();
-    },[])
+export function CSVUpload() {
+  const [step, setStep] = useState(1);
+  const [rooms, setRooms] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [seatingdata, setSeatingData] = useState([]);
+  const [attCharts, setAttCharts] = useState([]);
+  const [error, setError] = useState("");
+  const [fileName, setFileName] = useState("");
+  const { user } = useAuth();
 
-    const handleCheckedRoom = (e, room)=>{
-        const {checked} = e.target;
-        setRooms(prev => prev.map(item => (item.id === room.id? {...item, checked:checked} : item)))
-    }
-    const handleCheckedBranch = (e, branch)=>{
-        const {checked} = e.target;
-        setBranches(prev => prev.map(item => (item.id === branch.id ? {...item, checked:checked} : item)))
-    }
-    const handleChangeSubject = (e, branch)=>{
-        const {value} = e.target;
-        setBranches(prev => prev.map(item => (item.id === branch.id ? {...item, subject:value}: item)))
-    }
-    const handleFile = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
+  useEffect(() => {
+    const fetchRooms = async () => {
+      if (!user) {
+        setRooms([]);
+        return;
+      }
 
-        Papa.parse(file, {
-            header: true,
-            skipEmptyLines: true,
-            complete: ({ data }) => {
-                const result = transformFast(data);
-                console.log(result);
-                setBranches(result);
-            }
-        });
-        setStep(2);
+      const q = query(collection(db, "rooms"), where("ownerUid", "==", user.uid));
+      const querySnap = await getDocs(q);
+      const list = querySnap.docs.map((item) => ({
+        id: item.id,
+        ...item.data(),
+      }));
+      setRooms(list);
     };
 
+    fetchRooms();
+  }, [user]);
 
-    const handlesubmit =(e)=>{
-        e.preventDefault()
-        console.log("generated seating chart")
-        console.log(generateSeating(rooms, branches))
-        const selectedRooms = rooms
-                .filter(item => item.checked == true)
-                .map(item => new Room(item))
-        const selectedBranches = branches
-                .filter(item => item.checked == true)
-                .map(item => new Std(item))
-        const res = new SeatArranger(selectedRooms, selectedBranches);
-        // console.log(res.arr1())
-        // console.log(res.getAttChart())
-        setSeatingData(res.arr1())
-        setAttCharts(res.getAttChart())
-        setStep(3)
+  const selectedRooms = useMemo(
+    () => rooms.filter((item) => item.checked === true),
+    [rooms]
+  );
+  const selectedBranches = useMemo(
+    () => branches.filter((item) => item.checked === true),
+    [branches]
+  );
+
+  const selectedStudents = useMemo(
+    () => selectedBranches.reduce((sum, item) => sum + Number(item.strength || 0), 0),
+    [selectedBranches]
+  );
+
+  const missingSubjects = useMemo(
+    () => selectedBranches.filter((item) => !String(item.subject || "").trim()).length,
+    [selectedBranches]
+  );
+
+  const roomsUsed = useMemo(
+    () => new Set(seatingdata.map((item) => item.rno)).size,
+    [seatingdata]
+  );
+
+  const rowsAssigned = useMemo(
+    () => seatingdata.reduce((sum, item) => sum + Number(item.total || 0), 0),
+    [seatingdata]
+  );
+
+  const handleCheckedRoom = (e, room) => {
+    const { checked } = e.target;
+    setRooms((prev) =>
+      prev.map((item) => (item.id === room.id ? { ...item, checked } : item))
+    );
+  };
+
+  const handleCheckedBranch = (e, branch) => {
+    const { checked } = e.target;
+    setBranches((prev) =>
+      prev.map((item) => (item.id === branch.id ? { ...item, checked } : item))
+    );
+  };
+
+  const handleChangeSubject = (e, branch) => {
+    const { value } = e.target;
+    setBranches((prev) =>
+      prev.map((item) => (item.id === branch.id ? { ...item, subject: value } : item))
+    );
+  };
+
+  const handleFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setError("");
+    setFileName(file.name);
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      error: () => {
+        setError("Unable to read this file. Please upload a valid CSV file.");
+      },
+      complete: ({ data }) => {
+        const result = transformFast(data);
+        if (result.length === 0) {
+          setError("No roll numbers found in the file.");
+          setBranches([]);
+          return;
+        }
+
+        setBranches(result);
+        setSeatingData([]);
+        setAttCharts([]);
+        setStep(2);
+      },
+    });
+  };
+
+  const handleSelectAllRooms = () => {
+    const shouldSelectAll = rooms.some((item) => !item.checked);
+    setRooms((prev) => prev.map((item) => ({ ...item, checked: shouldSelectAll })));
+  };
+
+  const handleSelectAllBranches = () => {
+    const shouldSelectAll = branches.some((item) => !item.checked);
+    setBranches((prev) => prev.map((item) => ({ ...item, checked: shouldSelectAll })));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError("");
+
+    const roomPayload = selectedRooms.map((item) => new Room(item));
+    const branchPayload = selectedBranches.map((item) => new Std(item));
+
+    if (roomPayload.length === 0 || branchPayload.length === 0) {
+      setError("Select at least one room and one branch before generating.");
+      return;
     }
 
+    if (missingSubjects > 0) {
+      setError("Add a subject for every selected branch.");
+      return;
+    }
 
+    const res = new SeatArranger(roomPayload, branchPayload);
+    const generatedSeating = res.arr1();
 
-    return <>
+    if (generatedSeating.length === 0) {
+      setError("No seating could be generated. Check room capacity and branch selections.");
+      return;
+    }
 
-    { step === 1 && <div>
-        <h1> upload rollnumbers in csv format </h1>
-        <input type="file" accept=".csv" onChange={handleFile} />
-    </div>}
+    setSeatingData(generatedSeating);
+    setAttCharts(res.getAttChart());
+    setStep(3);
+  };
 
-    {step === 2 && <div>
-        <h1 id="selectroom"> select rooms </h1>
-        <div className="selectrooms">
+  return (
+    <section className="csv-page">
+      <header className="csv-hero dont-print">
+        <h1>Arrange Seating From CSV</h1>
+        <p>
+          Upload student roll numbers, choose rooms and subjects, then generate printable
+          seating and attendance charts.
+        </p>
 
-            {rooms.map(room => <div key={room.id}>
-                <label> {room.rno}
-                    <input type="checkbox"
-                        name={room.rno}
-                        id={room.rno}
-                        onChange={(e) => handleCheckedRoom(e, room)}
-                        checked={room.checked ? room.checked : false} />
-                </label>
-            </div>)}
-
+        <div className="csv-stepper" role="list" aria-label="Arrangement steps">
+          <StepPill index={1} title="Upload CSV" active={step === 1} done={step > 1} />
+          <StepPill index={2} title="Configure" active={step === 2} done={step > 2} />
+          <StepPill index={3} title="Review & Print" active={step === 3} done={false} />
         </div>
+      </header>
 
-        <SelectBranch handleChangeSubject={handleChangeSubject} handleCheckedBranch={handleCheckedBranch} branches={branches} />
-        <button onClick={handlesubmit}> generate seating chart</button>
-    </div>}
-    
-    {step === 3 && <div>
-        <button className="dont-print" onClick={()=> setStep(2) }> back </button>
-        <SeatingChart rows = {seatingdata} />
-        <AttSheets data={attCharts} />    
-        <button className="dont-print" onClick={(e)=>{ e.preventDefault(); window.print()}}> print </button>
-    </div>}
-    </>
-}
+      {error && (
+        <p className="csv-error dont-print" role="alert">
+          {error}
+        </p>
+      )}
 
-const SelectBranch =({handleChangeSubject,handleCheckedBranch,  branches})=>{
-    return <>
-    <h1 id="selectbranch">select branches </h1>
-    <div className="selectbranches">
-    {branches.map( branch => <div key={branch.id}>
-        <label> 
-            <input type="checkbox" 
-            name={branch.branch} 
-            id={branch.branch} 
-            onChange={(e) => handleCheckedBranch(e, branch)}
-            checked= {branch.checked ? branch.checked :false} />
-            {branch.branch}: 
-        </label>
-        <input type="text" name="subject" placeholder="subject name" value={branch.subject} onChange={(e)=> {handleChangeSubject(e, branch)}} /> <br />
-        </div>)}
-    </div></>
-}
+      {step === 1 && (
+        <section className="csv-panel dont-print">
+          <h2>Upload Roll Numbers File</h2>
+          <p className="csv-muted">
+            Expected format: each column is a branch and each row has roll numbers.
+          </p>
 
-const SeatingChart = ({rows})=>{
-    return <>
-    { (rows.length == 0) ? <p> no data found </p> : <Chart data={rows}/> }
-    
-    </>
-}
+          <label className="csv-file-input">
+            <input type="file" accept=".csv" onChange={handleFile} />
+            <span>Choose CSV file</span>
+          </label>
 
-//rno': 'vff 5', 'from': 1, 'to': 15, 'row': 1, 'branch': 'AIML'}
-const Chart = ({data})=>{
-    return <>
-        <table className="page potrait">
-        <thead>
-        <tr key={0}>
-        <th>branch</th>
-        <th> from  </th>
-        <th>strength </th>
-        <th> room  </th>
-        </tr>
-        </thead>
-        
-        <tbody>
-        { data.map(item =>  <tr key={item.limits}> 
-        <td> {item.branch}</td>
-        <td> { item.limits.map((limit) =><> {limit} <br/></>) }</td>
-        <td> {item.total} </td>
-        <td> { item.rno}</td>
-    </tr>) }
-        </tbody>
-    </table>
-    
-    </>
-}
+          {fileName && (
+            <p className="csv-file-name">
+              Selected file: <strong>{fileName}</strong>
+            </p>
+          )}
+        </section>
+      )}
 
-const AttSheets = ({data})=>{
-    return ((data ===0)?<p> no data</p> : <>{data.map(chart => <AttSheet key={chart.room} data ={chart} /> )}</>)
-}
-const AttSheet = ({data})=>{
-    let maxLen= Math.max(data.row1.length, data.row2.length)
-    return (
-        <div className="page landscape">
-        <h1> { data.room}</h1>
+      {step === 2 && (
+        <section className="dont-print">
+          <div className="csv-summary">
+            <SummaryPill label="Selected Rooms" value={selectedRooms.length} />
+            <SummaryPill label="Selected Branches" value={selectedBranches.length} />
+            <SummaryPill label="Selected Students" value={selectedStudents} />
+          </div>
 
-        <img src="../lara_logo.jpg" alt="" />
-        <div className="chart" style={ { display: "grid", gridTemplateRows:`repeat(${data.nor}, ${80}px)`, gridAutoFlow:'column'}}>
-          {Array.from({ length: maxLen }).map((_, index) => (
-            <div key={index}>
-              <section>{data.row1[index]}</section><section>{data.row2[index]}</section>
+          <div className="csv-grid">
+            <section className="csv-panel">
+              <div className="csv-panel-header">
+                <h2>Select Rooms</h2>
+                <button className="csv-link-btn" type="button" onClick={handleSelectAllRooms}>
+                  {rooms.every((item) => item.checked) ? "Clear all" : "Select all"}
+                </button>
+              </div>
+
+              {rooms.length === 0 && <p className="csv-muted">No rooms available. Add rooms first.</p>}
+
+              <div className="csv-list">
+                {rooms.map((room) => (
+                  <label key={room.id} className={`csv-option ${room.checked ? "is-selected" : ""}`}>
+                    <input
+                      type="checkbox"
+                      name={room.rno}
+                      id={room.rno}
+                      onChange={(e) => handleCheckedRoom(e, room)}
+                      checked={room.checked ? room.checked : false}
+                    />
+                    <div>
+                      <p className="csv-option-title">{room.rno}</p>
+                      <p className="csv-option-sub">Capacity: {room.strength}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </section>
+
+            <section className="csv-panel">
+              <div className="csv-panel-header">
+                <h2>Select Branches and Subjects</h2>
+                <button className="csv-link-btn" type="button" onClick={handleSelectAllBranches}>
+                  {branches.every((item) => item.checked) ? "Clear all" : "Select all"}
+                </button>
+              </div>
+
+              <SelectBranch
+                handleChangeSubject={handleChangeSubject}
+                handleCheckedBranch={handleCheckedBranch}
+                branches={branches}
+              />
+            </section>
+          </div>
+
+          <div className="csv-actions">
+            <button className="btn-secondary" type="button" onClick={() => setStep(1)}>
+              Change file
+            </button>
+            <p className="csv-muted">
+              {missingSubjects > 0
+                ? `${missingSubjects} selected branch${missingSubjects > 1 ? "es need" : " needs"} a subject.`
+                : "Ready to generate seating chart."}
+            </p>
+            <button className="btn-primary" onClick={handleSubmit}>
+              Generate Seating Chart
+            </button>
+          </div>
+        </section>
+      )}
+
+      {step === 3 && (
+        <section>
+          <div className="csv-result-header dont-print">
+            <div className="csv-summary">
+              <SummaryPill label="Rooms Used" value={roomsUsed} />
+              <SummaryPill label="Rows Assigned" value={rowsAssigned} />
+              <SummaryPill label="Attendance Sheets" value={attCharts.length} />
             </div>
-          ))}
-        </div>
-        </div>
-      );
+            <div className="csv-actions-inline">
+              <button className="btn-secondary" onClick={() => setStep(2)}>
+                Back
+              </button>
+              <button
+                className="btn-primary"
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.print();
+                }}
+              >
+                Print
+              </button>
+            </div>
+          </div>
+
+          <SeatingChart rows={seatingdata} />
+          <AttSheets data={attCharts} />
+        </section>
+      )}
+    </section>
+  );
 }
 
+const StepPill = ({ index, title, active, done }) => (
+  <div className={`csv-step-pill ${active ? "is-active" : ""} ${done ? "is-done" : ""}`} role="listitem">
+    <span>{index}</span>
+    <p>{title}</p>
+  </div>
+);
+
+const SummaryPill = ({ label, value }) => (
+  <div className="csv-summary-pill">
+    <p>{label}</p>
+    <strong>{value}</strong>
+  </div>
+);
+
+const SelectBranch = ({ handleChangeSubject, handleCheckedBranch, branches }) => {
+  return (
+    <div className="csv-list">
+      {branches.length === 0 && (
+        <p className="csv-muted">No branches found in uploaded CSV file.</p>
+      )}
+
+      {branches.map((branch) => {
+        const isMissing = branch.checked && !String(branch.subject || "").trim();
+
+        return (
+          <div key={branch.id} className={`csv-branch-row ${branch.checked ? "is-selected" : ""}`}>
+            <label className="csv-branch-label">
+              <input
+                type="checkbox"
+                name={branch.branch}
+                id={branch.branch}
+                onChange={(e) => handleCheckedBranch(e, branch)}
+                checked={branch.checked ? branch.checked : false}
+              />
+              <span>{branch.branch}</span>
+              <small>{branch.strength} students</small>
+            </label>
+
+            <input
+              className={isMissing ? "csv-subject-input is-error" : "csv-subject-input"}
+              type="text"
+              name="subject"
+              placeholder="Subject name/code"
+              value={branch.subject || ""}
+              onChange={(e) => {
+                handleChangeSubject(e, branch);
+              }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const SeatingChart = ({ rows }) => {
+  if (rows.length === 0) {
+    return <p className="csv-muted">No data found.</p>;
+  }
+
+  return <Chart data={rows} />;
+};
+
+const Chart = ({ data }) => {
+  return (
+    <table className="page potrait csv-result-table">
+      <thead>
+        <tr>
+          <th>Branch</th>
+          <th>Roll range</th>
+          <th>Strength</th>
+          <th>Room</th>
+          <th>Row</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {data.map((item, index) => (
+          <tr key={`${item.rno}-${item.branch}-${item.row}-${index}`}>
+            <td>{item.branch}</td>
+            <td>{item.limits.join(", ")}</td>
+            <td>{item.total}</td>
+            <td>{item.rno}</td>
+            <td>{item.row}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+};
+
+const AttSheets = ({ data }) => {
+  if (data.length === 0) {
+    return <p className="csv-muted">No attendance data.</p>;
+  }
+
+  return (
+    <>
+      {data.map((chart, index) => (
+        <AttSheet key={`${chart.room}-${index}`} data={chart} />
+      ))}
+    </>
+  );
+};
+
+const AttSheet = ({ data }) => {
+  const maxLen = Math.max(data.row1.length, data.row2.length);
+
+  return (
+    <div className="page landscape csv-att-sheet">
+      <header className="csv-att-header">
+        <h1>{data.room}</h1>
+        <img src="/lara_logo.jpg" alt="College logo" />
+      </header>
+
+      <div
+        className="chart csv-att-grid"
+        style={{
+          display: "grid",
+          gridTemplateRows: `repeat(${data.nor}, ${80}px)`,
+          gridAutoFlow: "column",
+        }}
+      >
+        {Array.from({ length: maxLen }).map((_, index) => (
+          <div key={index}>
+            <section>{data.row1[index] || "-"}</section>
+            <section>{data.row2[index] || "-"}</section>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};

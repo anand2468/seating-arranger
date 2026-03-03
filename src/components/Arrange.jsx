@@ -1,173 +1,253 @@
-import { useState, useEffect } from "react"
-import './Arrange.css'
-import { Room, SeatArranger, Std } from "../utils/dependencies";
-import { getDocs, collection } from "firebase/firestore";
-import { db } from "../firebase/firebase";
-
-function allValuesNotNull(array, property) {
-    return array.every(item => item[property] !== null);
-}
+import { useEffect, useMemo, useState } from "react"
+import "./arrange.css"
+import { Room, SeatArranger, Std } from "../utils/dependencies"
+import { getDocs, collection, query, where } from "firebase/firestore"
+import { db } from "../firebase/firebase"
+import { useAuth } from "../context/AuthContext"
 
 export default function Arrange(){
     const [rooms, setRooms] = useState([])
     const [branches, setBranches] = useState([])
-    const [seatingdata, setSeatingData] = useState([])
+    const [seatingData, setSeatingData] = useState([])
     const [attCharts, setAttCharts] = useState([])
-    
-    useEffect(()=>{ 
-        const fetchRooms = async ()=>{
-            const qurerySnap = await getDocs(collection(db, 'rooms'));
-            const list = qurerySnap.docs.map( doc => ({
-                id:doc.id,
-                ...doc.data()
-            }))
-            setRooms(list);
-        }
-        fetchRooms();
-    },[])
+    const [error, setError] = useState("")
+    const { user } = useAuth()
 
-    //get branches data
     useEffect(()=>{
         const fetchRooms = async ()=>{
-            const qurerySnap = await getDocs(collection(db, 'branches'));
-            const list = qurerySnap.docs.map( doc => ({
-                id:doc.id,
-                ...doc.data()
-            }))
-            setBranches(list);
+            if (!user) {
+                setRooms([])
+                return
+            }
+            const q = query(collection(db, "rooms"), where("ownerUid", "==", user.uid))
+            const querySnap = await getDocs(q)
+            const list = querySnap.docs.map((item) => ({ id:item.id, ...item.data() }))
+            setRooms(list)
         }
-        fetchRooms();
-    },[])
+        fetchRooms()
+    },[user])
+
+    useEffect(()=>{
+        const fetchBranches = async ()=>{
+            if (!user) {
+                setBranches([])
+                return
+            }
+            const q = query(collection(db, "branches"), where("ownerUid", "==", user.uid))
+            const querySnap = await getDocs(q)
+            const list = querySnap.docs.map((item) => ({ id:item.id, ...item.data() }))
+            setBranches(list)
+        }
+        fetchBranches()
+    },[user])
+
+    const selectedRooms = useMemo(
+        () => rooms.filter((item) => item.checked),
+        [rooms]
+    )
+
+    const selectedBranches = useMemo(
+        () => branches.filter((item) => item.checked),
+        [branches]
+    )
+
+    const selectedStudentCount = useMemo(
+        () => selectedBranches.reduce((sum, item) => sum + Number(item.strength || 0), 0),
+        [selectedBranches]
+    )
+
+    const missingSubjects = useMemo(
+        () => selectedBranches.filter((item) => !String(item.subject || "").trim()).length,
+        [selectedBranches]
+    )
 
     const handleCheckedRoom = (e, room)=>{
-        const {checked} = e.target;
-        setRooms(prev => prev.map(item => (item.id === room.id? {...item, checked:checked} : item)))
+        const { checked } = e.target
+        setRooms(prev => prev.map(item => (item.id === room.id ? { ...item, checked } : item)))
     }
+
     const handleCheckedBranch = (e, branch)=>{
-        const {checked} = e.target;
-        setBranches(prev => prev.map(item => (item.id === branch.id ? {...item, checked:checked} : item)))
+        const { checked } = e.target
+        setBranches(prev => prev.map(item => (item.id === branch.id ? { ...item, checked } : item)))
     }
+
     const handleChangeSubject = (e, branch)=>{
-        const {value} = e.target;
-        setBranches(prev => prev.map(item => (item.id === branch.id ? {...item, subject:value}: item)))
+        const { value } = e.target
+        setBranches(prev => prev.map(item => (item.id === branch.id ? { ...item, subject:value } : item)))
     }
 
-
-    const handlesubmit =(e)=>{
+    const handleSubmit =(e)=>{
         e.preventDefault()
-        const selectedRooms = rooms
-                .filter(item => item.checked == true)
-                .map(item => new Room(item))
-        const selectedBranches = branches
-                .filter(item => item.checked == true)
-                .map(item => new Std(item))
-        const res = new SeatArranger(selectedRooms, selectedBranches);
-        console.log(res.arr1())
-        console.log(res.getAttChart())
-        setSeatingData(res.arr1())
-        setAttCharts(res.getAttChart())
+        setError("")
+
+        const roomPayload = selectedRooms.map(item => new Room(item))
+        const branchPayload = selectedBranches.map(item => new Std(item))
+
+        if (roomPayload.length === 0 || branchPayload.length === 0) {
+            setError("Select at least one room and one branch.")
+            return
+        }
+
+        if (missingSubjects > 0) {
+            setError("Add a subject for each selected branch.")
+            return
+        }
+
+        const arranger = new SeatArranger(roomPayload, branchPayload)
+        const generated = arranger.arr1()
+
+        if (generated.length === 0) {
+            setError("No seating output generated. Check capacity and selected branches.")
+            return
+        }
+
+        setSeatingData(generated)
+        setAttCharts(arranger.getAttChart())
     }
 
+    return <section className="arrange-page">
+        <header className="page-header">
+            <p className="page-overline">Arrange</p>
+            <h1>Manual Seating Generator</h1>
+            <p>Select rooms and branches, set subject names, then generate printable allocations.</p>
+        </header>
 
+        {error && <p className="arrange-error dont-print">{error}</p>}
 
-    return <>
-    <h1 id="selectroom"> select rooms </h1>
+        <div className="arrange-summary dont-print">
+            <div className="arrange-pill"><p>Selected Rooms</p><strong>{selectedRooms.length}</strong></div>
+            <div className="arrange-pill"><p>Selected Branches</p><strong>{selectedBranches.length}</strong></div>
+            <div className="arrange-pill"><p>Students</p><strong>{selectedStudentCount}</strong></div>
+        </div>
 
-    <div className="selectrooms">
+        <div className="arrange-grid dont-print">
+            <section className="arrange-panel">
+                <div className="arrange-panel-head">
+                    <h2>Select Rooms</h2>
+                    <button type="button" className="text-btn" onClick={() => setRooms(prev => prev.map(item => ({ ...item, checked: true })))}>
+                        Select all
+                    </button>
+                </div>
 
-        {rooms.map( room => <div key={room.id}>
-        <label> {room.rno} 
-            <input type="checkbox" 
-            name={room.rno} 
-            id={room.rno} 
-            onChange={(e) => handleCheckedRoom(e, room)}
-            checked= {room.checked ? room.checked :false} />
-        </label>
-        </div>)}
+                <div className="arrange-list">
+                    {rooms.length === 0 && <p className="arrange-muted">No rooms available.</p>}
+                    {rooms.map(room => <label className={`arrange-option ${room.checked ? "is-selected" : ""}`} key={room.id}>
+                        <input
+                            type="checkbox"
+                            name={room.rno}
+                            id={room.rno}
+                            onChange={(e) => handleCheckedRoom(e, room)}
+                            checked={room.checked ? room.checked : false}
+                        />
+                        <span>{room.rno}</span>
+                        <small>Strength {room.strength}</small>
+                    </label>)}
+                </div>
+            </section>
 
-    </div>
+            <section className="arrange-panel">
+                <div className="arrange-panel-head">
+                    <h2>Select Branches</h2>
+                    <button type="button" className="text-btn" onClick={() => setBranches(prev => prev.map(item => ({ ...item, checked: true })))}>
+                        Select all
+                    </button>
+                </div>
 
-    <SelectBranch handleChangeSubject={handleChangeSubject} handleCheckedBranch={handleCheckedBranch} branches={branches}/>
+                <div className="arrange-list">
+                    {branches.length === 0 && <p className="arrange-muted">No branches available.</p>}
+                    {branches.map(branch => {
+                        const missing = branch.checked && !String(branch.subject || "").trim()
+                        return <div className={`arrange-branch-row ${branch.checked ? "is-selected" : ""}`} key={branch.id}>
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    name={branch.branch}
+                                    id={branch.branch}
+                                    onChange={(e) => handleCheckedBranch(e, branch)}
+                                    checked={branch.checked ? branch.checked : false}
+                                />
+                                {branch.branch} {branch.year}
+                            </label>
+                            <input
+                                type="text"
+                                name="subject"
+                                placeholder="Subject"
+                                value={branch.subject || ""}
+                                className={missing ? "is-error" : ""}
+                                onChange={(e)=> {handleChangeSubject(e, branch)}}
+                            />
+                        </div>
+                    })}
+                </div>
+            </section>
+        </div>
 
-    
+        <div className="arrange-actions dont-print">
+            <p className="arrange-muted">
+                {missingSubjects > 0 ? `${missingSubjects} selected branch${missingSubjects > 1 ? "es need" : " needs"} a subject.` : "Ready to generate seating."}
+            </p>
+            <button className="btn-primary" onClick={ handleSubmit}>Generate seating chart</button>
+            <button className="btn-secondary" onClick={(e)=>{ e.preventDefault(); window.print()}}>Print</button>
+        </div>
 
-    <button onClick={ handlesubmit}> generate seating chart</button>
-
-    <SeatingChart rows = {seatingdata} />
-    <AttSheets data={attCharts} />    
-    <button onClick={(e)=>{ e.preventDefault(); window.print()}}> print </button>
-    </>
-}
-
-const SelectBranch =({handleChangeSubject,handleCheckedBranch,  branches})=>{
-    return <>
-    <h1 id="selectbranch">select branches </h1>
-    <div className="selectbranches">
-    {branches.map( branch => <div key={branch.id}>
-        <label> 
-            <input type="checkbox" 
-            name={branch.branch} 
-            id={branch.branch} 
-            onChange={(e) => handleCheckedBranch(e, branch)}
-            checked= {branch.checked ? branch.checked :false} />
-            {branch.branch + " " + branch.year}: 
-        </label>
-        <input type="text" name="subject" placeholder="subject name" value={branch.subject} onChange={(e)=> {handleChangeSubject(e, branch)}} /> <br />
-        </div>)}
-    </div></>
+        <SeatingChart rows={seatingData} />
+        <AttSheets data={attCharts} />
+    </section>
 }
 
 const SeatingChart = ({rows})=>{
-    return <>
-    { (rows.length == 0) ? <p> no data found </p> : <Chart data={rows}/> }
-    
-    </>
+    return rows.length === 0
+        ? <p className="arrange-muted">No seating data generated yet.</p>
+        : <Chart data={rows}/>
 }
 
-//rno': 'vff 5', 'from': 1, 'to': 15, 'row': 1, 'branch': 'AIML'}
 const Chart = ({data})=>{
-    return <>
-        <table className="page">
+    return <table className="page data-table">
         <thead>
-        <tr key={0}>
-        <th>branch</th>
-        <th> from  </th>
-        <th> to </th>
-        <th>strength </th>
-        <th> room  </th>
-        </tr>
+            <tr>
+                <th>Branch</th>
+                <th>Roll Range</th>
+                <th>Strength</th>
+                <th>Room</th>
+                <th>Row</th>
+            </tr>
         </thead>
-        
+
         <tbody>
-        { data.map(item =>  <tr key={item.from}> 
-        <td> {item.branch}</td>
-        <td> { item.from }</td>
-        <td> {item.to} </td>
-        <td> {item.total} </td>
-        <td> { item.rno}</td>
-    </tr>) }
+            { data.map((item, index) => <tr key={`${item.rno}-${item.branch}-${item.row}-${index}`}>
+                <td>{item.branch}</td>
+                <td>{(item.limits || []).join(", ")}</td>
+                <td>{item.total}</td>
+                <td>{item.rno}</td>
+                <td>{item.row}</td>
+            </tr>) }
         </tbody>
     </table>
-    
-    </>
 }
 
 const AttSheets = ({data})=>{
-    return ((data ===0)?<p> no data</p> : <>{data.map(chart => <AttSheet key={chart.room} data ={chart} /> )}</>)
+    return data.length === 0
+        ? null
+        : <>{data.map((chart, index) => <AttSheet key={`${chart.room}-${index}`} data={chart} /> )}</>
 }
+
 const AttSheet = ({data})=>{
-    let maxLen= Math.max(data.row1.length, data.row2.length)
+    const maxLen = Math.max(data.row1.length, data.row2.length)
+
     return (
-        <div className="page">
-        <h1> { data.room}</h1>
-        <div className="chart" style={ { display: "grid", gridTemplateRows:`repeat(${data.nor}, ${80}px)`, gridAutoFlow:'column'}}>
-        
-          {Array.from({ length: maxLen }).map((_, index) => (
-            <div key={index}>
-              <section>{data.row1[index]}</section><section>{data.row2[index]}</section>
+        <div className="page arrange-sheet">
+            <h2>{data.room}</h2>
+            <div
+                className="chart arrange-chart"
+                style={{ display: "grid", gridTemplateRows:`repeat(${data.nor}, ${80}px)`, gridAutoFlow:'column' }}
+            >
+                {Array.from({ length: maxLen }).map((_, index) => (
+                    <div key={index}>
+                        <section>{data.row1[index] || "-"}</section>
+                        <section>{data.row2[index] || "-"}</section>
+                    </div>
+                ))}
             </div>
-          ))}
         </div>
-        </div>
-      );
+    )
 }

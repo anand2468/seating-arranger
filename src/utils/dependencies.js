@@ -1,4 +1,3 @@
-// Converted from dependencies.py
 // Exports: Room, Std, SeatArranger
 
 import { findLimits } from "./findLimits";
