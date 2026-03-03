@@ -1,0 +1,45 @@
+@media print {
+  body {
+    margin: 0;
+    padding: 0;
+  }
+  #root{
+    margin: 0;
+    padding: 0;
+    width: 100%;
+  }
+
+  .dont-print{
+    display: none;
+  }
+
+  .page {
+    width: 100%;
+    box-sizing: border-box;
+    page-break-after: always;
+    break-after: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .potrait {
+    page: portraitPage;
+  }
+
+  .landscape {
+    page : landscapePage;
+  }
+
+}
+
+/* Portrait layout */
+@page portraitPage {
+  size: A4 portrait;
+  margin: 20mm;
+}
+
+/* Landscape layout */
+@page landscapePage {
+  size: A4 landscape;
+  margin: 15mm;
+}

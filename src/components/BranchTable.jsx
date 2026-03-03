@@ -1,41 +1,40 @@
 import { useState, useEffect } from "react"
+import { collection, deleteDoc, getDocs, addDoc, doc } from "firebase/firestore"
+import { db } from "../firebase/firebase"
 
 export default function BranchTable(){
 const [data, setData] = useState([])
 const [editingId, setEditingId] = useState(null);
-// server url
-const url = import.meta.env.VITE_API_URL
-
 
 //loading data from the server and fill the table
-
-    useEffect(()=>{ 
-        fetch(`${url}/getbranches`)
-        .then(response=> {return response.json()})
-        .then(data=> {setData(data.response)})
-        .catch(reason=>{console.log(reason)})
+    useEffect(()=>{
+        const fetchRooms = async ()=>{
+            const qurerySnap = await getDocs(collection(db, 'branches'));
+            const list = qurerySnap.docs.map( doc => ({
+                id:doc.id,
+                ...doc.data()
+            }))
+            setData(list);
+        }
+        fetchRooms();
     },[])
 
 // function to handle insert branch 
-function handleInsert(branch){
-    fetch(`${url}/getbranches`,{
-        method:"POST",
-        headers: {
-            'Content-type': 'application/json',
-        },
-        body: JSON.stringify(branch)})
-    .then((resp)=>{ return resp.json()})
-    .then((data)=>{setData(prev=>[...prev, data.response]);});
+async function handleInsert(branch){
+    const doc = await addDoc(collection(db, "branches"), branch)
+    if (doc.id){
+        setData(oldData => [...oldData, branch])
+    }
+
 }
 
 // Function to handle row deletion
-const handleDelete = (id) => {
+const handleDelete = async (id) => {
     let conf = confirm("confirm to delete the branch!!")
     if (conf){
-        fetch(`${url}/getbranches/${id}`, {method:'DELETE'})
-        .then(resp => {return resp.json})
-        .then((data) => console.log(data.response))
-        setData(item => item.filter(room => id !== room._id))
+        const res = await deleteDoc(doc(db, 'branches', id))
+        console.log(res)
+        setData(item => item.filter(room => id !== room.id))
     }
 };
 
@@ -215,7 +214,7 @@ return (
         )}
     </td>
     <td>
-        <button onClick={() => onDelete(item._id)}>Delete</button>
+        <button onClick={() => onDelete(item.id)}>Delete</button>
         {/* <button onClick={handleEditClick}>
         {isEditing ? 'Save' : 'Edit'}
         </button> */}

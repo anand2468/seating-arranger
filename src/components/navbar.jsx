@@ -15,6 +15,9 @@ export default function navbar(){
             <li>
                 <Link to="/Arrange">Arrange</Link>
             </li>
+            <li>
+                <Link to="/csvupload">Arrange v2</Link>
+            </li>
         </ul>
     </nav>
 }

@@ -10,10 +10,12 @@ class room:
         self.subj = {'row1':[], 'row2':[]}
         self.rmss = 0
 
-    def isEmpty(self):
+    def isEmpty(self) -> bool:
+        """ returns true if the room is empty, false otherwise"""
         return True if self.row1 != 0 or self.row2 != 0 else False
 
-    def desc(self):
+    def desc(self) -> None:
+        """ prints the alloted rooms """
         return f'{ self.rno } is Alloted to {self.dt}\nrecord is {self.record}'
         
     def canFill(self, std, row):
@@ -74,7 +76,7 @@ class std:
         self.alloted_rooms = []
 
 class seatarranger:
-    def __init__(self, roomList, branchList):
+    def __init__(self, roomList:list[room], branchList:list[std]):
         self.roomList = roomList
         self.branchList = branchList
         self.completed = []

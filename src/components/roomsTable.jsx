@@ -1,35 +1,37 @@
 import { useEffect, useState } from "react"
+import { collection, getDocs, addDoc, deleteDoc, doc } from "firebase/firestore"
+import { db } from "../firebase/firebase"
 
 export default function Roomstable(){
     const [roomList, setRoomList] = useState([])
-    const url = import.meta.env.VITE_API_URL
 
     useEffect(()=>{ 
-        console.log("url is " + url)
-        fetch(`${url}/getrooms`)
-        .then(response=> {return response.json()})
-        .then(data=> {console.log(data);setRoomList(data.response)})
-        .catch(reason=>{console.log(reason)})
+        const fetchRooms = async ()=>{
+            const qurerySnap = await getDocs(collection(db, 'rooms'));
+            const list = qurerySnap.docs.map( doc => ({
+                id:doc.id,
+                ...doc.data()
+            }))
+            setRoomList(list);
+        }
+        fetchRooms();
     },[])
 
-    function handleInsert(room){
-        fetch(`${url}/getrooms`,{
-            method:"POST",
-            headers: {
-                'Content-type': 'application/json',
-            },
-            body: JSON.stringify(room)})
-        .then((resp)=>{ return resp.json()})
-        .then((data)=>{setRoomList(prev=>[...prev, data.response]);});
-        
+    async function handleInsert(room){
+        const res = await addDoc(collection(db, "rooms"), room)
+        if (res.id){
+            alert('data added successfully');
+            setRoomList(old => [...old, room])
+        }else{
+            alert("data added failed check you connection!");
+        }
+
     }
-    function handleDeleteRow(id){
+    async function handleDeleteRow(id){
         let conf = confirm("delete the row")
         if (conf){
-            fetch(`${url}/getrooms/${id}`, {method:'DELETE'})
-            .then(resp => {return resp.json})
-            .then((data) => console.log(data.response))
-            setRoomList(item => item.filter(room => id !== room._id))
+            await deleteDoc(doc(db, 'rooms', id))
+            setRoomList(item => item.filter(room => id !== room.id))
         }
     }
 
@@ -88,12 +90,12 @@ const Table = ({roomList, handleDeleteRow })=>{
     </thead>
     
     <tbody>
-    { roomList.map(item =>  <tr key={item._id}> 
+    { roomList.map(item =>  <tr key={item.id}> 
     <td> {item.rno}</td>
     <td> { item.rows }</td>
     <td> {item.columns} </td>
     <td> {item.strength} </td>
-    <td> <button onClick={()=> handleDeleteRow(item._id)}> delete row</button></td>
+    <td> <button onClick={()=> handleDeleteRow(item.id)}> delete row</button></td>
 </tr>) }
     </tbody>
 </table>

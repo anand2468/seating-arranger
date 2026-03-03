@@ -133,8 +133,9 @@ form#formInsertRooms input:focus {
     visibility: hidden;
   }
   #root{
-    margin: 5px;
-    padding: 2px;
+    margin: 0px;
+    padding: 0px;
+    max-width: 100%;
   }
   .selectrooms{
     display: none;
